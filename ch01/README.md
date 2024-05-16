@@ -2,4 +2,6 @@
 
 There is no code in this chapter.
 
-Test
+Test your understanding of the concepts in this chapter by answering the following questions:
+
+test
