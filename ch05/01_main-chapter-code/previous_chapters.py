@@ -219,7 +219,7 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
         # Crop current context if it exceeds the supported context size
         # E.g., if LLM supports only 5 tokens, and the context size is 10
         # then only the last 5 tokens are used as context
-        idx_cond = idx[:, -context_size:]
+        idx_cond = idx[:, -context_size:] # the first dimension is the batch size
 
         # Get the predictions
         with torch.no_grad():
