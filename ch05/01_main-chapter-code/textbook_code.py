@@ -288,7 +288,7 @@ def generate_and_print_sample(model, tokenizer, device, start_context):
 
 torch.manual_seed(123)
 model = GPTModel(GPT_CONFIG_124M)
-model.to(device)
+model.to(device) # send model to device
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0004, weight_decay=0.1)
 num_epochs = 1
 train_losses, val_losses, tokens_seen = train_model_simple(
