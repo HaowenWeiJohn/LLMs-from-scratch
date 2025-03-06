@@ -132,6 +132,9 @@ class SpamDataset(Dataset):
             if encoded_length > max_length:
                 max_length = encoded_length
         return max_length
+        # Note: A more pythonic version to implement this method
+        # is the following, which is also used in the next chapter:
+        # return max(len(encoded_text) for encoded_text in self.encoded_texts)
 
 
 def calc_accuracy_loader(data_loader, model, device, num_batches=None):
@@ -273,7 +276,17 @@ if __name__ == "__main__":
     extracted_path = "sms_spam_collection"
     data_file_path = Path(extracted_path) / "SMSSpamCollection.tsv"
 
-    download_and_unzip_spam_data(url, zip_path, extracted_path, data_file_path, test_mode=args.test_mode)
+    try:
+        download_and_unzip_spam_data(
+            url, zip_path, extracted_path, data_file_path, test_mode=args.test_mode
+        )
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+        print(f"Primary URL failed: {e}. Trying backup URL...")
+        backup_url = "https://f001.backblazeb2.com/file/LLMs-from-scratch/sms%2Bspam%2Bcollection.zip"
+        download_and_unzip_spam_data(
+            backup_url, zip_path, extracted_path, data_file_path, test_mode=args.test_mode
+        )
+
     df = pd.read_csv(data_file_path, sep="\t", header=None, names=["Label", "Text"])
     balanced_df = create_balanced_dataset(df)
     balanced_df["Label"] = balanced_df["Label"].map({"ham": 0, "spam": 1})

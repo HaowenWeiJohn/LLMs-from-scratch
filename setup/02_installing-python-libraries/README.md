@@ -4,6 +4,13 @@ This document provides more information on double-checking your installed Python
 
 I used the following libraries listed [here](https://github.com/rasbt/LLMs-from-scratch/blob/main/requirements.txt) for this book. Newer versions of these libraries are likely compatible as well. However, if you experience any problems with the code, you can try these library versions as a fallback.
 
+
+
+> **Note:**
+> If you you are using `uv` as described in [Option 1: Using uv](../01_optional-python-setup-preferences/README.md), you can replace `pip` via `pip uv` in the commands below. For example, `pip install -r requirements.txt` becomes `uv pip install -r requirements.txt`
+
+
+
 To install these requirements most conveniently, you can use the `requirements.txt` file in the root directory for this code repository and execute the following command:
 
 ```bash
@@ -38,16 +45,13 @@ In this case, you may want to use `watermark` to check if you opened the Jupyter
 <img src="https://sebastianraschka.com/images/LLMs-from-scratch-images/setup/02_installing-python-libraries/watermark.jpg" width="350px">
 
 
-<br>
-<br>
-
-
+&nbsp;
 ## Installing PyTorch
 
 PyTorch can be installed just like any other Python library or package using pip. For example:
 
 ```bash
-pip install torch==2.0.1
+pip install torch
 ```
 
 However, since PyTorch is a comprehensive library featuring CPU- and GPU-compatible codes, the installation may require additional settings and explanation (see the *A.1.3 Installing PyTorch in the book for more information*).
@@ -56,7 +60,7 @@ It's also highly recommended to consult the installation guide menu on the offic
 
 <img src="https://sebastianraschka.com/images/LLMs-from-scratch-images/setup/02_installing-python-libraries/pytorch-installer.jpg" width="600px">
 
-
+<br>
 
 ---
 

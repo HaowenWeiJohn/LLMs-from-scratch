@@ -37,38 +37,38 @@ mv setup/03_optional-docker-environment/.devcontainer ./
 
 4. If you have a [CUDA-supported GPU](https://developer.nvidia.com/cuda-gpus), you can speed up the training and inference:
 
-   3.1 Install **NVIDIA Container Toolkit** as described [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installing-with-apt). NVIDIA Container Toolkit is supported as written [here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html#nvidia-compute-software-support-on-wsl-2).
+    4.1 Install **NVIDIA Container Toolkit** as described [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installing-with-apt). NVIDIA Container Toolkit is supported as written [here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html#nvidia-compute-software-support-on-wsl-2).
 
-   3.2 Add _nvidia_ as runtime in Docker Engine daemon config (see _Docker Desktop_ -> _Change settings_ -> _Docker Engine_). Add these lines to your config:
+    4.2 Add _nvidia_ as runtime in Docker Engine daemon config (see _Docker Desktop_ -> _Change settings_ -> _Docker Engine_). Add these lines to your config:
 
-   ```json
-   "runtimes": {
-       "nvidia": {
-       "path": "nvidia-container-runtime",
-       "runtimeArgs": []
-   ```
+    ```json
+    "runtimes": {
+        "nvidia": {
+        "path": "nvidia-container-runtime",
+        "runtimeArgs": []
+    ```
 
-   For example, the full Docker Engine daemon config json code should look like that:
+    For example, the full Docker Engine daemon config json code should look like that:
 
-   ```json
-   {
-     "builder": {
-       "gc": {
-         "defaultKeepStorage": "20GB",
-         "enabled": true
-       }
-     },
-     "experimental": false,
-     "runtimes": {
-       "nvidia": {
-         "path": "nvidia-container-runtime",
-         "runtimeArgs": []
-       }
-     }
-   }
-   ```
+    ```json
+    {
+      "builder": {
+        "gc": {
+          "defaultKeepStorage": "20GB",
+          "enabled": true
+        }
+      },
+      "experimental": false,
+      "runtimes": {
+        "nvidia": {
+          "path": "nvidia-container-runtime",
+          "runtimeArgs": []
+        }
+      }
+    }
+    ```
 
-   and restart Docker Desktop.
+    and restart Docker Desktop.
 
 5. Type `code .` in the terminal to open the project in VS Code. Alternatively, you can launch VS Code and select the project to open from the UI.
 
@@ -86,7 +86,7 @@ The entire process is automated and might take a few minutes, depending on your 
 
 Once completed, VS Code will automatically connect to the container and reopen the project within the newly created Docker development environment. You will be able to write, execute, and debug code as if it were running on your local machine, but with the added benefits of Docker's isolation and consistency.
 
-> [!WARNING]
+> **Warning:**
 > If you are encountering an error during the build process, this is likely because your machine does not support NVIDIA container toolkit because your machine doesn't have a compatible GPU. In this case, edit the `devcontainer.json` file to remove the `"runArgs": ["--runtime=nvidia", "--gpus=all"],` line and run the "Reopen Dev Container" procedure again.
 
 9. Finished.

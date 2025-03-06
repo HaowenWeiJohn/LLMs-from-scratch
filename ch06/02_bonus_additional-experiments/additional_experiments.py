@@ -94,6 +94,9 @@ class SpamDataset(Dataset):
             if encoded_length > max_length:
                 max_length = encoded_length
         return max_length
+        # Note: A more pythonic version to implement this method
+        # is the following, which is also used in the next chapter:
+        # return max(len(encoded_text) for encoded_text in self.encoded_texts)
 
 
 def download_and_unzip(url, zip_path, extract_to, new_file_path):
@@ -181,15 +184,42 @@ def instantiate_model(choose_model, load_weights):
 
 
 def calc_loss_batch(input_batch, target_batch, model, device,
-                    trainable_token_pos=-1, ignore_index=-100):
+                    trainable_token_pos=-1, ignore_index=-100, average_embeddings=False):
     input_batch, target_batch = input_batch.to(device), target_batch.to(device)
-    logits = model(input_batch)[:, trainable_token_pos, :]  # Logits of last output token
-    loss = torch.nn.functional.cross_entropy(logits, target_batch, ignore_index=ignore_index)
-    return loss
+
+    if trainable_token_pos == "flexible":  # Selects the last tokens before the padding tokens
+        # From https://github.com/rasbt/LLMs-from-scratch/discussions/434
+        # Find the last non-padding token for each sequence in the batch
+        pad_token_id = 50256  # <|endoftext|> token used for padding
+        mask = input_batch != pad_token_id
+        last_token_pos = mask.sum(dim=1) - 1  # Get position of last real token
+
+        # Get model outputs
+        logits = model(input_batch)  # shape: [batch_size, seq_len, num_classes]
+
+        # Select the logits corresponding to the last real token of each sequence
+        batch_size = logits.size(0)
+        selected_logits = logits[torch.arange(batch_size), last_token_pos]
+
+        loss = torch.nn.functional.cross_entropy(selected_logits, target_batch)
+        return loss
+
+    else:
+        model_output = model(input_batch)
+        if average_embeddings:
+            # Average over the sequence dimension (dim=1)
+            logits = model_output.mean(dim=1)
+        else:
+            # Select embeddings at the specified token position
+            logits = model_output[:, trainable_token_pos, :]
+
+        loss = torch.nn.functional.cross_entropy(logits, target_batch, ignore_index=ignore_index)
+        return loss
 
 
 def calc_loss_loader(data_loader, model, device,
-                     num_batches=None, trainable_token_pos=-1, ignore_index=-100):
+                     num_batches=None, trainable_token_pos=-1,
+                     ignore_index=-100, average_embeddings=False):
     total_loss = 0.
     if len(data_loader) == 0:
         return float("nan")
@@ -203,7 +233,8 @@ def calc_loss_loader(data_loader, model, device,
         if i < num_batches:
             loss = calc_loss_batch(
                 input_batch, target_batch, model, device,
-                trainable_token_pos=trainable_token_pos, ignore_index=ignore_index
+                trainable_token_pos=trainable_token_pos, ignore_index=ignore_index,
+                average_embeddings=average_embeddings
             )
             total_loss += loss.item()
         else:
@@ -212,7 +243,8 @@ def calc_loss_loader(data_loader, model, device,
 
 
 @torch.no_grad()  # Disable gradient tracking for efficiency
-def calc_accuracy_loader(data_loader, model, device, num_batches=None, trainable_token_pos=-1):
+def calc_accuracy_loader(data_loader, model, device, num_batches=None,
+                         trainable_token_pos=-1, average_embeddings=False):
     model.eval()
     correct_predictions, num_examples = 0, 0
 
@@ -220,30 +252,65 @@ def calc_accuracy_loader(data_loader, model, device, num_batches=None, trainable
         num_batches = len(data_loader)
     else:
         num_batches = min(num_batches, len(data_loader))
-    for i, (input_batch, target_batch) in enumerate(data_loader):
-        if i < num_batches:
-            input_batch, target_batch = input_batch.to(device), target_batch.to(device)
-            logits = model(input_batch)[:, trainable_token_pos, :]  # Logits of last output token
-            predicted_labels = torch.argmax(logits, dim=-1)
 
-            num_examples += predicted_labels.shape[0]
-            correct_predictions += (predicted_labels == target_batch).sum().item()
-        else:
-            break
+    if trainable_token_pos == "flexible":
+        for i, (input_batch, target_batch) in enumerate(data_loader):
+            if i < num_batches:
+                input_batch, target_batch = input_batch.to(device), target_batch.to(device)
+
+                # Find the last non-padding token for each sequence in the batch
+                pad_token_id = 50256  # <|endoftext|> token used for padding
+                mask = input_batch != pad_token_id
+                last_token_pos = mask.sum(dim=1) - 1  # Get position of last real token
+
+                with torch.no_grad():
+                    logits = model(input_batch)  # Logits of last output token
+                    # Select the logits corresponding to the last real token of each sequence
+                    batch_size = logits.size(0)
+                    selected_logits = logits[torch.arange(batch_size), last_token_pos]
+                    predicted_labels = torch.argmax(selected_logits, dim=-1)
+
+                num_examples += predicted_labels.shape[0]
+                correct_predictions += (predicted_labels == target_batch).sum().item()
+            else:
+                break
+
+    else:
+        for i, (input_batch, target_batch) in enumerate(data_loader):
+            if i < num_batches:
+                input_batch, target_batch = input_batch.to(device), target_batch.to(device)
+
+                model_output = model(input_batch)
+                if average_embeddings:
+                    # Average over the sequence dimension (dim=1)
+                    logits = model_output.mean(dim=1)
+                else:
+                    # Select embeddings at the specified token position
+                    logits = model_output[:, trainable_token_pos, :]
+
+                predicted_labels = torch.argmax(logits, dim=-1)
+
+                num_examples += predicted_labels.shape[0]
+                correct_predictions += (predicted_labels == target_batch).sum().item()
+            else:
+                break
     return correct_predictions / num_examples
 
 
 def evaluate_model(model, train_loader, val_loader, device,
-                   eval_iter, trainable_token_pos=-1, ignore_index=-100):
+                   eval_iter, trainable_token_pos=-1,
+                   ignore_index=-100, average_embeddings=False):
     model.eval()
     with torch.no_grad():
         train_loss = calc_loss_loader(
             train_loader, model, device, num_batches=eval_iter,
-            trainable_token_pos=trainable_token_pos, ignore_index=ignore_index
+            trainable_token_pos=trainable_token_pos, ignore_index=ignore_index,
+            average_embeddings=average_embeddings
         )
         val_loss = calc_loss_loader(
             val_loader, model, device, num_batches=eval_iter,
-            trainable_token_pos=trainable_token_pos, ignore_index=ignore_index
+            trainable_token_pos=trainable_token_pos, ignore_index=ignore_index,
+            average_embeddings=average_embeddings
         )
     model.train()
     return train_loss, val_loss
@@ -251,7 +318,7 @@ def evaluate_model(model, train_loader, val_loader, device,
 
 def train_classifier_simple(model, train_loader, val_loader, optimizer, device, num_epochs,
                             eval_freq, eval_iter, max_steps=None, trainable_token_pos=-1,
-                            accumulation_steps=1, ignore_index=-100):
+                            accumulation_steps=1, ignore_index=-100, average_embeddings=False):
     # Initialize lists to track losses and tokens seen
     train_losses, val_losses, train_accs, val_accs = [], [], [], []
     examples_seen, global_step = 0, -1
@@ -263,7 +330,8 @@ def train_classifier_simple(model, train_loader, val_loader, optimizer, device, 
         for batch_idx, (input_batch, target_batch) in enumerate(train_loader):
             loss = calc_loss_batch(
                 input_batch, target_batch, model, device,
-                trainable_token_pos=trainable_token_pos, ignore_index=ignore_index
+                trainable_token_pos=trainable_token_pos, ignore_index=ignore_index,
+                average_embeddings=average_embeddings
             )
 
             # Use gradient accumulation if accumulation_steps > 1
@@ -286,7 +354,8 @@ def train_classifier_simple(model, train_loader, val_loader, optimizer, device, 
             if global_step % eval_freq == 0:
                 train_loss, val_loss = evaluate_model(
                     model, train_loader, val_loader, device, eval_iter,
-                    trainable_token_pos=trainable_token_pos, ignore_index=ignore_index
+                    trainable_token_pos=trainable_token_pos, ignore_index=ignore_index,
+                    average_embeddings=average_embeddings
                 )
                 train_losses.append(train_loss)
                 val_losses.append(val_loss)
@@ -297,8 +366,14 @@ def train_classifier_simple(model, train_loader, val_loader, optimizer, device, 
                 break
 
         # New: Calculate accuracy after each epoch
-        train_accuracy = calc_accuracy_loader(train_loader, model, device, num_batches=eval_iter, trainable_token_pos=trainable_token_pos)
-        val_accuracy = calc_accuracy_loader(val_loader, model, device, num_batches=eval_iter, trainable_token_pos=trainable_token_pos)
+        train_accuracy = calc_accuracy_loader(
+            train_loader, model, device, num_batches=eval_iter,
+            trainable_token_pos=trainable_token_pos, average_embeddings=average_embeddings
+        )
+        val_accuracy = calc_accuracy_loader(
+            val_loader, model, device, num_batches=eval_iter,
+            trainable_token_pos=trainable_token_pos, average_embeddings=average_embeddings
+        )
         print(f"Training accuracy: {train_accuracy*100:.2f}% | ", end="")
         print(f"Validation accuracy: {val_accuracy*100:.2f}%")
         train_accs.append(train_accuracy)
@@ -356,7 +431,16 @@ if __name__ == "__main__":
         type=str,
         default="last",
         help=(
-            "Which token position to train. Options: 'first', 'last'."
+            "Which token position to train. Options: 'first', 'last', 'flexible'."
+        )
+    )
+    parser.add_argument(
+        "--average_embeddings",
+        action='store_true',
+        default=False,
+        help=(
+            "Average the output embeddings from all tokens instead of using"
+            " only the embedding at the token position specified by `--trainable_token_pos`."
         )
     )
     parser.add_argument(
@@ -365,7 +449,7 @@ if __name__ == "__main__":
         default="longest_training_example",
         help=(
             "The context length of the data inputs."
-            "Options: 'longest_training_example', 'model_context_length' or integer value."
+            " Options: 'longest_training_example', 'model_context_length' or integer value."
         )
     )
     parser.add_argument(
@@ -409,7 +493,6 @@ if __name__ == "__main__":
             "The batch size used for training."
         )
     )
-
     parser.add_argument(
         "--accumulation_steps",
         type=int,
@@ -422,7 +505,6 @@ if __name__ == "__main__":
             " the latter setting uses more iterations."
         )
     )
-
     parser.add_argument(
         "--disable_causal_mask",
         action='store_true',
@@ -431,7 +513,6 @@ if __name__ == "__main__":
             "Disables the causal attention mask."
         )
     )
-
     parser.add_argument(
         "--ignore_index",
         type=int,
@@ -447,6 +528,10 @@ if __name__ == "__main__":
         args.trainable_token_pos = 0
     elif args.trainable_token_pos == "last":
         args.trainable_token_pos = -1
+    # The "flexible" setting selects the last tokens before the padding tokens
+    # See https://github.com/rasbt/LLMs-from-scratch/discussions/434
+    elif args.trainable_token_pos == "flexible":
+        args.trainable_token_pos = "flexible"
     else:
         raise ValueError("Invalid --trainable_token_pos argument")
 
@@ -518,7 +603,12 @@ if __name__ == "__main__":
     all_exist = all((base_path / file_name).exists() for file_name in file_names)
 
     if not all_exist:
-        download_and_unzip(url, zip_path, extract_to, new_file_path)
+        try:
+            download_and_unzip(url, zip_path, extract_to, new_file_path)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+            print(f"Primary URL failed: {e}. Trying backup URL...")
+            backup_url = "https://f001.backblazeb2.com/file/LLMs-from-scratch/sms%2Bspam%2Bcollection.zip"
+            download_and_unzip(backup_url, zip_path, extract_to, new_file_path)
         create_dataset_csvs(new_file_path)
 
     tokenizer = tiktoken.get_encoding("gpt2")
@@ -589,7 +679,7 @@ if __name__ == "__main__":
         model, train_loader, val_loader, optimizer, device,
         num_epochs=args.num_epochs, eval_freq=50, eval_iter=5,
         max_steps=None, trainable_token_pos=args.trainable_token_pos,
-        accumulation_steps=args.accumulation_steps
+        accumulation_steps=args.accumulation_steps, average_embeddings=args.average_embeddings
     )
 
     end_time = time.time()
@@ -600,9 +690,18 @@ if __name__ == "__main__":
     # Evaluate model
     ###############################
 
-    train_accuracy = calc_accuracy_loader(train_loader, model, device, trainable_token_pos=args.trainable_token_pos)
-    val_accuracy = calc_accuracy_loader(val_loader, model, device, trainable_token_pos=args.trainable_token_pos)
-    test_accuracy = calc_accuracy_loader(test_loader, model, device, trainable_token_pos=args.trainable_token_pos)
+    train_accuracy = calc_accuracy_loader(
+        train_loader, model, device,
+        trainable_token_pos=args.trainable_token_pos, average_embeddings=args.average_embeddings
+    )
+    val_accuracy = calc_accuracy_loader(
+        val_loader, model, device,
+        trainable_token_pos=args.trainable_token_pos, average_embeddings=args.average_embeddings
+    )
+    test_accuracy = calc_accuracy_loader(
+        test_loader, model, device,
+        trainable_token_pos=args.trainable_token_pos, average_embeddings=args.average_embeddings
+    )
 
     print(f"Training accuracy: {train_accuracy*100:.2f}%")
     print(f"Validation accuracy: {val_accuracy*100:.2f}%")
